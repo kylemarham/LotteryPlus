@@ -1,0 +1,33 @@
+name: LotteryPlus
+version: '${project.version}'
+main: asoxus.lotteryplus.LotteryPlus
+api-version: 1.19
+authors: [ Asoxus ]
+
+commands:
+  lottery:
+    description: Allows players to buy lottery tickets, donate to the lottery pot, or play the lottery chance game.
+    usage: /lottery <buy | donate | chance | announce>
+    permission: myplugin.lottery
+    aliases: [lot, lotto]
+    children:
+      buy:
+        description: Allows players to buy lottery tickets
+        usage: /lottery buy <number of tickets>
+        permission: myplugin.lottery.buy
+      donate:
+        description: Allows players to donate money to the lottery pot
+        usage: /lottery donate <amount>
+        permission: myplugin.lottery.donate
+      chance:
+        description: Allows players to play the lottery chance game
+        usage: /lottery chance <amount>
+        permission: myplugin.lottery.chance
+      announce:
+        description: Announces the current state of the lottery.
+        usage: /lottery announce
+        permission: myplugin.lottery.announce
+      status:
+        description: Gives the player information about the lottery.
+        usage: /lottery status
+        permission: myplugin.lottery.status

@@ -1,0 +1,23 @@
+# Price of a lottery ticket
+ticket-price: 100
+
+# Maximum number of tickets a player can purchase
+max-ticket-count: 100
+
+# The percentage chance of someone winning a gamble
+chance-percent: 20
+
+# The multiplier of the win
+chance-win: 2
+
+# The header - can support & color codes
+header: ''
+
+# The footer - can support & color codes
+footer: ''
+
+# The prefix - can support & color codes
+prefix: '&6&l[LotteryPlus] &r'
+
+# The interval of the announcements, in seconds
+Interval: 600
