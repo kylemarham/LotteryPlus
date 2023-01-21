@@ -10,12 +10,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.ChatColor;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 
+import java.io.File;
+import java.io.IOException;
 import java.text.NumberFormat;
-import java.util.Random;
-import java.util.List;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.logging.Logger;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 
 public class LotteryPlus extends JavaPlugin {
     private Economy economy = null;
@@ -28,12 +32,18 @@ public class LotteryPlus extends JavaPlugin {
     private List<Player> lotteryTicketHolders = new ArrayList<>();
     private boolean isDrawing = false;
     private String lastWinnerName = "";
-    private double lastWinnerAmount = 0.0;
+    private String lastDrawTime;
+    private double lastWinnerAmount;
     private String header = "";
     private String footer = "";
     private String prefix = "";
     private Logger logger;
     private int Interval;
+    private int lotteryDrawTaskId;
+    private int lotteryAnnounceTaskId;
+
+    private Map<Player, Long> chanceCommandCooldown = new HashMap<>();
+    private int chanceCommandCooldownTaskId;
 
     public String formatCurrency(double amount) {
         NumberFormat formatter = NumberFormat.getNumberInstance();
@@ -60,26 +70,60 @@ public class LotteryPlus extends JavaPlugin {
         footer = ChatColor.translateAlternateColorCodes('&', config.getString("footer"));
         prefix = ChatColor.translateAlternateColorCodes('&', config.getString("prefix"));
         lotteryPot = 0.0;
-        Interval = config.getInt("interval", 600);
+        Interval = config.getInt("interval", 60);
 
         logger = Logger.getLogger("Minecraft");
         logger.info("[LotteryPlus] has been enabled!");
 
-        // Schedule a task to run every 10 minutes (20 ticks per second * 60 seconds per minute * 10 minutes) to announce the current lottery pot
-        Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
+        scheduleLotteryDraw();
+        scheduleLotteryAnnounce();
+
+        chanceCommandCooldown = new HashMap<>();
+        chanceCommandCooldownTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
             @Override
+            public void run() {
+                Iterator<Map.Entry<Player, Long>> iterator = chanceCommandCooldown.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Player, Long> entry = iterator.next();
+                    if (System.currentTimeMillis() - entry.getValue() >= 60000) {
+                        iterator.remove();
+                    }
+                }
+            }
+        }, 0L, 20L * 60);
+    }
+
+    public void onDisable() {
+        //save the data.yml file
+        FileConfiguration dataConfig = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "data.yml"));
+        try {
+            dataConfig.save(new File(getDataFolder(), "data.yml"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        //cancel the lottery draw task
+        Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
+        Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+        Bukkit.getScheduler().cancelTask(chanceCommandCooldownTaskId);
+        //log that the plugin was disabled
+        getLogger().info("LotteryPlus has been disabled!");
+    }
+
+    public void scheduleLotteryAnnounce() {
+        lotteryAnnounceTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
             public void run() {
                 if (!isDrawing) {
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "The current lottery pot is "+ ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Buy your tickets with "+ ChatColor.BOLD + ChatColor.GOLD +"/lottery buy <amount>");
+                    Bukkit.broadcastMessage(prefix + "&aThe current lottery pot is " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + " with " + lotteryTicketHolders.size() + " tickets!");
+                    Bukkit.broadcastMessage(prefix + "&aBuy your tickets with " + ChatColor.BOLD + ChatColor.GOLD + "/lottery buy <amount>");
                     Bukkit.broadcastMessage(footer);
                 }
             }
         }, 20 * Interval, 20 * Interval);
+    }
 
-        // Schedule a task to run every 60 minutes (20 ticks per second * 60 seconds per minute * 60 minutes) to draw a random ticket
-        Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
+    public void scheduleLotteryDraw() {
+        lotteryDrawTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
             @Override
             public void run() {
                 isDrawing = true;
@@ -88,6 +132,10 @@ public class LotteryPlus extends JavaPlugin {
                     Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
                     lastWinnerName = winner.getName();
                     lastWinnerAmount = lotteryPot;
+                    lastDrawTime = String.valueOf(new Date().getTime());
+
+                    saveWinnerData(winner, lotteryPot);
+
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
                     Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Congratulations! " + ChatColor.BOLD + ChatColor.GOLD + winner.getName() + ChatColor.RESET + ChatColor.GREEN + " has won the lottery and won " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
@@ -96,12 +144,48 @@ public class LotteryPlus extends JavaPlugin {
                     lotteryPot = 0.0;
                 } else {
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + "No one has bought lottery tickets, so no one won the lottery this round.");
+                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "No one has bought lottery tickets, so no one won the lottery this round.");
                     Bukkit.broadcastMessage(footer);
+                    lotteryPot = 0.0;
                 }
                 isDrawing = false;
             }
         }, 20 * 60 * 60, 20 * 60 * 60);
+    }
+
+    private void saveWinnerData(Player winner, double prize) {
+        FileConfiguration data = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "data.yml"));
+        data.set("last-winner", winner.getName());
+        data.set("last-prize", prize);
+        data.set("last-draw-time", new Date().getTime());
+
+        try {
+            data.save(new File(getDataFolder(), "data.yml"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Map<String,Object> getLastDrawData() {
+        Map<String,Object> data = new HashMap<>();
+        FileConfiguration dataConfig = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "data.yml"));
+        data.put("last-winner", dataConfig.getString("last-winner"));
+        data.put("last-prize", dataConfig.getDouble("last-prize"));
+        data.put("last-draw-time", dataConfig.getLong("last-draw-time"));
+        return data;
+    }
+
+    private long getTimeUntilNextDraw() {
+        long lastDrawTime = (long) getLastDrawData().get("last-draw-time");
+        getLogger().info("Last draw time " + lastDrawTime);
+
+        long currentTime = System.currentTimeMillis();
+        getLogger().info("Current time " + currentTime);
+
+        long timeUntilNextDraw = (lastDrawTime + Interval/60*60*1000 - currentTime) / (1000*60);
+        getLogger().info("Time until draw " + timeUntilNextDraw);
+
+        return timeUntilNextDraw;
     }
 
     private boolean setupEconomy() {
@@ -251,13 +335,15 @@ public class LotteryPlus extends JavaPlugin {
                 }
                 return true;
             } else if (args[0].equalsIgnoreCase("announce")) {
-                if (!(sender instanceof Player)) {
-                    sender.sendMessage("This command can only be executed by a player.");
-                    return true;
-                }
+
                 Player player = (Player) sender;
                 if (!player.hasPermission("lotteryplus.lottery.announce")) {
                     player.sendMessage(prefix + ChatColor.RED +"You do not have permission to execute this command.");
+                    return true;
+                }
+
+                if (!(sender instanceof Player)) {
+                    sender.sendMessage("This command can only be executed by a player.");
                     return true;
                 }
                 Bukkit.broadcastMessage(header);
@@ -265,7 +351,9 @@ public class LotteryPlus extends JavaPlugin {
                 Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Buy your tickets with "+ ChatColor.BOLD + ChatColor.GOLD +"/lottery buy <amount>");
                 Bukkit.broadcastMessage(footer);
                 return true;
+
             } else if (args[0].equalsIgnoreCase("status")) {
+
                 Player player = (Player) sender;
                 if (!player.hasPermission("lotteryplus.lottery.status")) {
                     player.sendMessage("You do not have permission to execute this command.");
@@ -273,15 +361,87 @@ public class LotteryPlus extends JavaPlugin {
                 }
                 player.sendMessage(header);
                 if( lastWinnerName != "" ){
-                    player.sendMessage(prefix + ChatColor.GREEN + "Last lottery winner: " + lastWinnerName);
-                    player.sendMessage(prefix + ChatColor.GREEN + "Amount won: " + formatCurrency(lastWinnerAmount));
+                    Map<String,Object> data = getLastDrawData();
+                    String lastWinner = (String) data.get("last-winner");
+                    double lastPrize = (double) data.get("last-prize");
+
+                    player.sendMessage(prefix + ChatColor.GREEN + "Last lottery winner: " + lastWinner);
+                    player.sendMessage(prefix + ChatColor.GREEN + "Amount won: " + formatCurrency(lastPrize));
                 }
-                player.sendMessage(prefix + ChatColor.GREEN + "Number of tickets in current lottery: " + lotteryTicketHolders.size());
-                player.sendMessage(prefix + ChatColor.GREEN + "Current prize pot: " + ChatColor.GOLD + formatCurrency(lotteryPot));
+                player.sendMessage(prefix + "&aNumber of tickets in current lottery: " + lotteryTicketHolders.size());
+                player.sendMessage(prefix + "&bCurrent prize pot: " + ChatColor.GOLD + formatCurrency(lotteryPot));
+                player.sendMessage(prefix + "&cThe next draw will be " + getTimeUntilNextDraw());
                 player.sendMessage(footer);
                 return true;
+
+            } else if (args[0].equalsIgnoreCase("boost")) {
+
+                Player player = (Player) sender;
+                if (!player.hasPermission("lotteryplus.lottery.boost")) {
+                    player.sendMessage("You do not have permission to execute this command.");
+                    return true;
+                }
+
+                double boostAmount;
+                try {
+                    boostAmount = Double.parseDouble(args[1]);
+                } catch (NumberFormatException e) {
+                    player.sendMessage(prefix + ChatColor.RED + "Invalid boost amount.");
+                    return true;
+                }
+                if (boostAmount <= 0) {
+                    player.sendMessage(prefix + ChatColor.RED + "Boost amount must be greater than 0.");
+                    return true;
+                }
+                lotteryPot += boostAmount;
+                Bukkit.broadcastMessage(header);
+                Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + ChatColor.GREEN + " has boosted the lottery by " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(boostAmount) + ChatColor.RESET + ChatColor.GREEN + "!");
+                Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Buy your tickets with "+ ChatColor.BOLD + ChatColor.GOLD +"/lottery buy <amount>");
+                Bukkit.broadcastMessage(footer);
+                return true;
+
+            } else if (args[0].equalsIgnoreCase("draw")) {
+
+                Player player = (Player) sender;
+                if (!player.hasPermission("lotteryplus.lottery.draw")) {
+                    player.sendMessage("You do not have permission to execute this command.");
+                    return true;
+                }
+
+                isDrawing = true;
+                if (lotteryTicketHolders.size() > 0) {
+                    Random random = new Random();
+                    Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
+                    lastWinnerName = winner.getName();
+                    lastWinnerAmount = lotteryPot;
+                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+                    Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Congratulations! " + ChatColor.BOLD + ChatColor.GOLD + winner.getName() + ChatColor.RESET + ChatColor.GREEN + " has won the lottery and won " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
+                    Bukkit.broadcastMessage(footer);
+                    lotteryTicketHolders.clear();
+                    lotteryPot = 0.0;
+                } else {
+                    Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "No one has bought lottery tickets, so no one won the lottery this round.");
+                    Bukkit.broadcastMessage(footer);
+                }
+                isDrawing = false;
+
+                if (lotteryDrawTaskId != -1) {
+                    Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
+                    scheduleLotteryDraw();
+                    logger.info("[LotteryPlus] Lottery drawn early, restarting drawTask");
+                }
+                if (lotteryAnnounceTaskId != -1) {
+                    Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+                    scheduleLotteryAnnounce();
+                    logger.info("[LotteryPlus] Lottery drawn early, restarting announceTask");
+                }
+
+                return true;
+
             } else {
-                sender.sendMessage(prefix + ChatColor.RED + "Invalid command. Usage: /lottery <buy | donate | chance | announce>");
+                sender.sendMessage(prefix + ChatColor.RED + "Invalid command. Usage: /lottery <buy | donate | chance>");
                 return true;
             }
         }
