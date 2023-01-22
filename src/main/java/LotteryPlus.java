@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -140,7 +141,6 @@ public class LotteryPlus extends JavaPlugin {
                         player.sendMessage(header);
                         player.sendMessage(colorize(prefix + "&aThe lottery will be drawn in " + getTimeUntilNextDraw()));
                         player.sendMessage(colorize(prefix + "&aThe current pot is &6&l" + formatCurrency(lotteryPot) + "&r&a with " + lotteryTicketHolders.size() + " tickets!"));
-                        player.sendMessage(colorize(prefix + "&aBuy your tickets with &6&l/lottery buy <amount>"));
                         player.sendMessage(footer);
                     }
                 }
@@ -166,6 +166,7 @@ public class LotteryPlus extends JavaPlugin {
                     Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &6&l" + formatCurrency(lotteryPot) + "&a!") );
                     Bukkit.broadcastMessage(footer);
+
                     lotteryTicketHolders.clear();
                     lotteryPot = 0.0;
                 } else {
@@ -235,6 +236,16 @@ public class LotteryPlus extends JavaPlugin {
         }
     }
 
+    public int getPlayerTicketCount(Player player) {
+        int count = 0;
+        for (Player p : lotteryTicketHolders) {
+            if (p.getName().equals(player.getName())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public String colorize(String str){
         return str.replace('&', '§');
     }
@@ -280,36 +291,58 @@ public class LotteryPlus extends JavaPlugin {
                 return true;
             }
             if (args[0].equalsIgnoreCase("buy")) {
+
                 if (!(sender instanceof Player)) {
                     sender.sendMessage("This command can only be executed by a player.");
                     return true;
                 }
+
                 Player player = (Player) sender;
                 if (args.length != 2) {
-                    player.sendMessage( colorize(prefix + "Usage: /lottery buy <number of tickets>") );
+                    player.sendMessage( colorize(prefix + "&cUsage: /lottery buy <number of tickets>") );
                     return true;
                 }
+
                 int ticketCount;
                 try {
                     ticketCount = Integer.parseInt(args[1]);
                 } catch (NumberFormatException e) {
-                    player.sendMessage( colorize(prefix + "&aInvalid number of tickets.") );
+                    player.sendMessage( colorize(prefix + "&cInvalid number of tickets.") );
                     return true;
                 }
                 if (ticketCount < 1 || ticketCount > maxTicketCount) {
-                    player.sendMessage( colorize(prefix + "&cYou can only purchase between 1 and " + maxTicketCount + " lottery tickets.") );
+                    player.sendMessage( colorize(prefix + "&cYou can only purchase between 1 and " + maxTicketCount + " tickets.") );
                     return true;
                 }
+
+                int currentTicketCount = getPlayerTicketCount(player);
+
+                // If the user already has maximum tickets, prevent them from buying more
+                if( currentTicketCount == maxTicketCount ){
+                    player.sendMessage( colorize(prefix + "&cYou already have the maximum of " + maxTicketCount + " tickets.") );
+                    return true;
+                }
+
+                // If the user tries to buy more than 100 tickets, limit them to 100-how many they are trying to buy
+                if (currentTicketCount + ticketCount > maxTicketCount) {
+                    ticketCount = maxTicketCount - currentTicketCount;
+                    player.sendMessage( colorize(prefix + "&cYou can only purchase &6" + ticketCount + "&c more tickets") );
+                }
+
                 double totalPrice = ticketCount * ticketPrice;
+
                 if (balance.getBalance(player) < totalPrice) {
-                    player.sendMessage( colorize(prefix + "&cYou don't have enough money to purchase " + ticketCount + " lottery tickets.") );
+                    player.sendMessage( colorize(prefix + "&cYou don't have enough money to purchase " + ticketCount + " tickets.") );
                     return true;
                 }
+
                 balance.setBalance(player, balance.getBalance(player) - totalPrice);
                 lotteryPot += totalPrice;
+
                 for (int i = 0; i < ticketCount; i++) {
                     lotteryTicketHolders.add(player);
                 }
+
                 player.sendMessage( colorize(prefix + "&aYou have successfully purchased &6" + ticketCount + "&a lottery tickets for &6" + formatCurrency(totalPrice)) );
                 Bukkit.broadcastMessage(header);
                 Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has purchased &6" + ticketCount + "&a /lottery tickets. There is now &6" + formatCurrency(lotteryPot) + "&a in the pot!") );
@@ -317,12 +350,12 @@ public class LotteryPlus extends JavaPlugin {
                 return true;
             } else if (args[0].equalsIgnoreCase("donate")) {
                 if (!(sender instanceof Player)) {
-                    sender.sendMessage( colorize(prefix + "&aThis command can only be executed by a player.") );
+                    sender.sendMessage( colorize(prefix + "&cThis command can only be executed by a player.") );
                     return true;
                 }
                 Player player = (Player) sender;
                 if (args.length != 2) {
-                    player.sendMessage( colorize(prefix + "&aUsage: /lottery donate <amount>") );
+                    player.sendMessage( colorize(prefix + "&cUsage: /lottery donate <amount>") );
                     return true;
                 }
                 double donationAmount;
@@ -402,7 +435,7 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage( colorize(prefix + "&cSorry, you did not win this time. Better luck next time!") );
 
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has risked &6" + formatCurrency(stakeAmount) + "&6 and lost it all! The lottery amount is now &6" + formatCurrency(lotteryPot) + "&a!") );
+                    Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has risked &6" + formatCurrency(stakeAmount) + "&a and lost it all! The lottery amount is now &6" + formatCurrency(lotteryPot) + "&a!") );
                     Bukkit.broadcastMessage(footer);
                 }
 
@@ -411,7 +444,7 @@ public class LotteryPlus extends JavaPlugin {
 
                 Player player = (Player) sender;
                 if (!player.hasPermission("lotteryplus.announce")) {
-                    player.sendMessage( colorize(prefix + "&aYou do not have permission to execute this command.") );
+                    player.sendMessage( colorize(prefix + "&cYou do not have permission to execute this command.") );
                     return true;
                 }
 
@@ -429,7 +462,7 @@ public class LotteryPlus extends JavaPlugin {
 
                 Player player = (Player) sender;
                 if (!player.hasPermission("lotteryplus.status")) {
-                    player.sendMessage("You do not have permission to execute this command.");
+                    player.sendMessage("&cYou do not have permission to execute this command.");
                     return true;
                 }
                 player.sendMessage(header);
@@ -442,8 +475,8 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage( colorize(prefix + "&aAmount won: " + formatCurrency(lastPrize)) );
                 }
                 player.sendMessage( colorize(prefix + "&aNumber of tickets in current lottery: " + lotteryTicketHolders.size()) );
-                player.sendMessage( colorize(prefix + "&bCurrent prize pot: &6" + formatCurrency(lotteryPot)) );
-                player.sendMessage( colorize(prefix + "&cThe next draw will be in " + getTimeUntilNextDraw()) );
+                player.sendMessage( colorize(prefix + "&aCurrent prize pot: &6" + formatCurrency(lotteryPot)) );
+                player.sendMessage( colorize(prefix + "&aThe next draw will be in " + getTimeUntilNextDraw()) );
                 player.sendMessage(footer);
                 return true;
 
@@ -452,7 +485,7 @@ public class LotteryPlus extends JavaPlugin {
                 if (sender instanceof Player) {
                     Player player = (Player) sender;
                     if (!player.hasPermission("lotteryplus.boost")) {
-                        player.sendMessage("You do not have permission to execute this command.");
+                        player.sendMessage("&cYou do not have permission to execute this command.");
                         return true;
                     }
 
@@ -487,7 +520,8 @@ public class LotteryPlus extends JavaPlugin {
 
                     if (args.length == 2) {
                         Bukkit.broadcastMessage(header);
-                        Bukkit.broadcastMessage( colorize(prefix + "&6" + "&a The lottery pot has been boosted boosted by &6&l" + formatCurrency(boostAmount) + "&r&a!") );
+                        Bukkit.broadcastMessage( colorize(prefix + "&a The lottery pot has been boosted boosted by &6&l" + formatCurrency(boostAmount) + "&r&a!") );
+                        Bukkit.broadcastMessage( colorize(prefix + "&aCurrent prize pot: &6" + formatCurrency(lotteryPot)) );
                         Bukkit.broadcastMessage( colorize(prefix + "&aBuy your tickets with &6&l" + "/lottery buy <amount>") );
                         Bukkit.broadcastMessage(footer);
                     }
@@ -511,8 +545,6 @@ public class LotteryPlus extends JavaPlugin {
                     lastWinnerName = winner.getName();
                     lastWinnerAmount = lotteryPot;
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
-                    lotteryTicketHolders.clear();
-                    lotteryPot = 0.0;
 
                     Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &l&6" + formatCurrency(lotteryPot) + "&r&a!") );
@@ -522,6 +554,9 @@ public class LotteryPlus extends JavaPlugin {
                     Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
                     Bukkit.broadcastMessage(footer);
                 }
+
+                lotteryTicketHolders.clear();
+                lotteryPot = 0.0;
                 isDrawing = false;
 
                 if (lotteryDrawTaskId != -1) {
