@@ -1,10 +1,9 @@
-package asoxus.lotteryplus;
-
 import net.milkbowl.vault.economy.Economy;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.ChatColor;
@@ -16,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -44,6 +44,8 @@ public class LotteryPlus extends JavaPlugin {
 
     private Map<Player, Long> chanceCommandCooldown = new HashMap<>();
     private int chanceCommandCooldownTaskId;
+    private File dataFile;
+    private FileConfiguration dataConfig;
 
     public String formatCurrency(double amount) {
         NumberFormat formatter = NumberFormat.getNumberInstance();
@@ -60,8 +62,10 @@ public class LotteryPlus extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+
         saveDefaultConfig();
         FileConfiguration config = getConfig();
+
         ticketPrice = config.getDouble("ticket-price", 2.5);
         maxTicketCount = config.getInt("max-ticket-count", 100);
         chanceWin = config.getDouble("chance-win", 2);
@@ -70,7 +74,7 @@ public class LotteryPlus extends JavaPlugin {
         footer = ChatColor.translateAlternateColorCodes('&', config.getString("footer"));
         prefix = ChatColor.translateAlternateColorCodes('&', config.getString("prefix"));
         lotteryPot = 0.0;
-        Interval = config.getInt("interval", 60);
+        Interval = config.getInt("interval", 600);
 
         logger = Logger.getLogger("Minecraft");
         logger.info("[LotteryPlus] has been enabled!");
@@ -91,6 +95,25 @@ public class LotteryPlus extends JavaPlugin {
                 }
             }
         }, 0L, 20L * 60);
+
+        // Set the current time within data.yml to set the 'last draw' as when the plugin is enabled
+        dataFile = new File(getDataFolder(), "data.yml");
+        if(!dataFile.exists()) {
+            try {
+                dataFile.createNewFile();
+            } catch (IOException e) {
+                getLogger().severe("Could not create data.yml file: " + e.getMessage());
+            }
+        }
+        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+        dataConfig.set("last-draw-time", new Date().getTime());
+        long nextDrawTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(60);
+        dataConfig.set("nextDrawTime", nextDrawTime);
+        try {
+            dataConfig.save(dataFile);
+        } catch (IOException e) {
+            getLogger().severe("Could not save data.yml file: " + e.getMessage());
+        }
     }
 
     public void onDisable() {
@@ -113,10 +136,13 @@ public class LotteryPlus extends JavaPlugin {
         lotteryAnnounceTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
             public void run() {
                 if (!isDrawing) {
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + "&aThe current lottery pot is " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + " with " + lotteryTicketHolders.size() + " tickets!");
-                    Bukkit.broadcastMessage(prefix + "&aBuy your tickets with " + ChatColor.BOLD + ChatColor.GOLD + "/lottery buy <amount>");
-                    Bukkit.broadcastMessage(footer);
+                    for(Player player : Bukkit.getOnlinePlayers()) {
+                        player.sendMessage(header);
+                        player.sendMessage(colorize(prefix + "&aThe lottery will be drawn in " + getTimeUntilNextDraw()));
+                        player.sendMessage(colorize(prefix + "&aThe current pot is &6&l" + formatCurrency(lotteryPot) + "&r&a with " + lotteryTicketHolders.size() + " tickets!"));
+                        player.sendMessage(colorize(prefix + "&aBuy your tickets with &6&l/lottery buy <amount>"));
+                        player.sendMessage(footer);
+                    }
                 }
             }
         }, 20 * Interval, 20 * Interval);
@@ -138,13 +164,13 @@ public class LotteryPlus extends JavaPlugin {
 
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Congratulations! " + ChatColor.BOLD + ChatColor.GOLD + winner.getName() + ChatColor.RESET + ChatColor.GREEN + " has won the lottery and won " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
+                    Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &6&l" + formatCurrency(lotteryPot) + "&a!") );
                     Bukkit.broadcastMessage(footer);
                     lotteryTicketHolders.clear();
                     lotteryPot = 0.0;
                 } else {
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "No one has bought lottery tickets, so no one won the lottery this round.");
+                    Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
                     Bukkit.broadcastMessage(footer);
                     lotteryPot = 0.0;
                 }
@@ -175,17 +201,15 @@ public class LotteryPlus extends JavaPlugin {
         return data;
     }
 
-    private long getTimeUntilNextDraw() {
-        long lastDrawTime = (long) getLastDrawData().get("last-draw-time");
-        getLogger().info("Last draw time " + lastDrawTime);
-
+    private String getTimeUntilNextDraw() {
         long currentTime = System.currentTimeMillis();
-        getLogger().info("Current time " + currentTime);
+        long nextDrawTime = dataConfig.getLong("nextDrawTime", 0);
+        long timeUntilNextDraw = nextDrawTime - currentTime;
 
-        long timeUntilNextDraw = (lastDrawTime + Interval/60*60*1000 - currentTime) / (1000*60);
-        getLogger().info("Time until draw " + timeUntilNextDraw);
+        // convert timeUntilNextDraw to minutes
+        String minutesUntilNextDraw = TimeUnit.MILLISECONDS.toMinutes(timeUntilNextDraw) + " minutes";
 
-        return timeUntilNextDraw;
+        return minutesUntilNextDraw;
     }
 
     private boolean setupEconomy() {
@@ -211,11 +235,48 @@ public class LotteryPlus extends JavaPlugin {
         }
     }
 
+    public String colorize(String str){
+        return str.replace('&', '§');
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("lottery")) {
-            if (args.length == 0) {
-                sender.sendMessage(prefix + ChatColor.RED + "Invalid command. Usage: /lottery <buy | donate | chance | announce>");
+            if (args.length == 0){
+                sender.sendMessage( colorize("&d=== " +getDescription().getFullName()+ " ===") );
+                sender.sendMessage( colorize("&aAuthor: OhSoGamer") );
+                sender.sendMessage( colorize("&aVersion: " +  getDescription().getVersion() ) );
+                sender.sendMessage( colorize("&aFeatures:") );
+                sender.sendMessage( colorize("&a- Chance (Allows a user to chance some of their money)") );
+                sender.sendMessage( colorize("&a- Donate (Allows a user to donate some of their money)") );
+                sender.sendMessage( "" );
+                sender.sendMessage( colorize("&aUse /lottery help for a full list of commands") );
+                return true;
+            }
+            if (args[0].equalsIgnoreCase("help")) {
+                sender.sendMessage( colorize("&d=== " +getDescription().getFullName()+ " ===") );
+                sender.sendMessage( colorize("&aCommands:") );
+                if (sender.hasPermission("lotteryplus.buy")) {
+                    sender.sendMessage( colorize("&a- /lottery buy [amount]: &7Purchase lottery tickets") );
+                }
+                if (sender.hasPermission("lotteryplus.donate")) {
+                    sender.sendMessage( colorize("&a- /lottery donate [amount]: &7Donate to the lottery pot") );
+                }
+                if (sender.hasPermission("lotteryplus.chance")) {
+                    sender.sendMessage( colorize("&a- /lottery chance [amount]: &7Take a chance to win a return on your stake") );
+                }
+                if (sender.hasPermission("lotteryplus.status")) {
+                    sender.sendMessage( colorize("&a- /lottery status: &7Check the current lottery status") );
+                }
+                if (sender.hasPermission("lotteryplus.announce")) {
+                    sender.sendMessage( colorize("&a- /lottery announce: &7Check the current lottery status and when the next draw will be") );
+                }
+                if (sender.hasPermission("lotteryplus.boost")) {
+                    sender.sendMessage( colorize("&a- /lottery boost: &7Boost the prize pool with a percentage of your balance") );
+                }
+                if (sender.hasPermission("lotteryplus.draw")) {
+                    sender.sendMessage( colorize("&a- /lottery draw: &7Draw the lottery immediately") );
+                }
                 return true;
             }
             if (args[0].equalsIgnoreCase("buy")) {
@@ -225,23 +286,23 @@ public class LotteryPlus extends JavaPlugin {
                 }
                 Player player = (Player) sender;
                 if (args.length != 2) {
-                    player.sendMessage(prefix + ChatColor.GREEN + "Usage: /lottery buy <number of tickets>");
+                    player.sendMessage( colorize(prefix + "Usage: /lottery buy <number of tickets>") );
                     return true;
                 }
                 int ticketCount;
                 try {
                     ticketCount = Integer.parseInt(args[1]);
                 } catch (NumberFormatException e) {
-                    player.sendMessage(prefix + ChatColor.RED + "Invalid number of tickets.");
+                    player.sendMessage( colorize(prefix + "&aInvalid number of tickets.") );
                     return true;
                 }
                 if (ticketCount < 1 || ticketCount > maxTicketCount) {
-                    player.sendMessage(prefix + ChatColor.RED + "You can only purchase between 1 and " + maxTicketCount + " lottery tickets.");
+                    player.sendMessage( colorize(prefix + "&cYou can only purchase between 1 and " + maxTicketCount + " lottery tickets.") );
                     return true;
                 }
                 double totalPrice = ticketCount * ticketPrice;
                 if (balance.getBalance(player) < totalPrice) {
-                    player.sendMessage(prefix + ChatColor.RED + "You don't have enough money to purchase " + ticketCount + " lottery tickets.");
+                    player.sendMessage( colorize(prefix + "&cYou don't have enough money to purchase " + ticketCount + " lottery tickets.") );
                     return true;
                 }
                 balance.setBalance(player, balance.getBalance(player) - totalPrice);
@@ -249,41 +310,41 @@ public class LotteryPlus extends JavaPlugin {
                 for (int i = 0; i < ticketCount; i++) {
                     lotteryTicketHolders.add(player);
                 }
-                player.sendMessage(prefix + ChatColor.GREEN + "You have successfully purchased " + ChatColor.GOLD + ticketCount + ChatColor.GREEN + " lottery tickets for " + ChatColor.GOLD + formatCurrency(totalPrice));
+                player.sendMessage( colorize(prefix + "&aYou have successfully purchased &6" + ticketCount + "&a lottery tickets for &6" + formatCurrency(totalPrice)) );
                 Bukkit.broadcastMessage(header);
-                Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + ChatColor.GREEN + " has purchased " + ChatColor.GOLD + ticketCount + ChatColor.GREEN + " /lottery tickets. There is now " + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.GREEN + " in the pot!");
+                Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has purchased &6" + ticketCount + "&a /lottery tickets. There is now &6" + formatCurrency(lotteryPot) + "&a in the pot!") );
                 Bukkit.broadcastMessage(footer);
                 return true;
             } else if (args[0].equalsIgnoreCase("donate")) {
                 if (!(sender instanceof Player)) {
-                    sender.sendMessage(prefix + ChatColor.RED + "This command can only be executed by a player.");
+                    sender.sendMessage( colorize(prefix + "&aThis command can only be executed by a player.") );
                     return true;
                 }
                 Player player = (Player) sender;
                 if (args.length != 2) {
-                    player.sendMessage(prefix + ChatColor.GREEN + "Usage: /lottery donate <amount>");
+                    player.sendMessage( colorize(prefix + "&aUsage: /lottery donate <amount>") );
                     return true;
                 }
                 double donationAmount;
                 try {
                     donationAmount = Double.parseDouble(args[1]);
                 } catch (NumberFormatException e) {
-                    player.sendMessage(prefix + ChatColor.RED + "Invalid donation amount.");
+                    player.sendMessage( colorize(prefix + "&cInvalid donation amount.") );
                     return true;
                 }
                 if (donationAmount < 0) {
-                    player.sendMessage(prefix + ChatColor.RED + "Donation amount must be greater than or equal to 0.");
+                    player.sendMessage( colorize(prefix + "&cDonation amount must be greater than or equal to 0.") );
                     return true;
                 }
                 if (balance.getBalance(player) < donationAmount) {
-                    player.sendMessage(prefix + ChatColor.RED + "You don't have enough money to donate " + formatCurrency(donationAmount) + ".");
+                    player.sendMessage( colorize(prefix + "&cYou don't have enough money to donate " + formatCurrency(donationAmount) + ".") );
                     return true;
                 }
                 balance.setBalance(player, balance.getBalance(player) - donationAmount);
                 lotteryPot += donationAmount;
-                player.sendMessage(prefix + ChatColor.GREEN + "You have successfully donated " + ChatColor.GOLD + formatCurrency(donationAmount) + ChatColor.GREEN + " to the lottery pot.");
+                player.sendMessage( colorize(prefix + "&aYou have successfully donated &6" + formatCurrency(donationAmount) + "&a to the lottery pot.") );
                 Bukkit.broadcastMessage(header);
-                Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + ChatColor.GREEN + " has donated " + ChatColor.GOLD + formatCurrency(donationAmount) + ChatColor.GREEN + " to the lottery pot. There is now " + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.GREEN + " in the pot!");
+                Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has donated &6" + formatCurrency(donationAmount) + "&a to the lottery pot. There is now &6" + formatCurrency(lotteryPot) + "&a in the pot!") );
                 Bukkit.broadcastMessage(footer);
                 return true;
             } else if (args[0].equalsIgnoreCase("chance")) {
@@ -292,53 +353,65 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
                 Player player = (Player) sender;
+
                 if (args.length != 2) {
-                    player.sendMessage(prefix + ChatColor.RED + "Usage: /lottery chance <amount>");
+                    player.sendMessage( colorize(prefix + "&cUsage: /lottery chance <amount>") );
                     return true;
                 }
+
                 double stakeAmount;
                 try {
                     stakeAmount = Double.parseDouble(args[1]);
                 } catch (NumberFormatException e) {
-                    player.sendMessage(prefix + ChatColor.RED + "Invalid stake amount.");
+                    player.sendMessage( colorize(prefix + "&cInvalid stake amount.") );
                     return true;
                 }
+
                 if (stakeAmount <= 0) {
-                    player.sendMessage(prefix + ChatColor.RED + "Stake amount must be greater than 0.");
+                    player.sendMessage( colorize(prefix + "&cStake amount must be greater than 0.") );
                     return true;
                 }
+
                 if (balance.getBalance(player) < stakeAmount) {
-                    player.sendMessage(prefix + ChatColor.RED + "You don't have enough money to stake " + formatCurrency(stakeAmount) + ".");
+                    player.sendMessage( colorize(prefix + "&cYou don't have enough money to stake " + formatCurrency(stakeAmount) + ".") );
                     return true;
                 }
+
+                if (chanceCommandCooldown.containsKey(player) && System.currentTimeMillis() - chanceCommandCooldown.get(player) < 60000) {
+                    player.sendMessage( colorize(prefix + "&cYou must wait before using the chance command again.") );
+                    return true;
+                } else {
+                    chanceCommandCooldown.put(player, System.currentTimeMillis());
+                }
+
                 balance.setBalance(player, balance.getBalance(player) - stakeAmount);
                 Random random = new Random();
                 int chance = random.nextInt(100);
 
-                logger.info("[LotteryPlus] " + player.getName() + "has risked " + stakeAmount);
-                logger.info("[LotteryPlus] The chance result is " + chance + ", and the chancePercent is " + chancePercent);
-
                 if (chance <= chancePercent) {
                     double winnings = stakeAmount * chanceWin;
                     balance.setBalance(player, balance.getBalance(player) + winnings);
-                    player.sendMessage(prefix + ChatColor.GREEN + "Congratulations! You won " + ChatColor.GOLD + formatCurrency(winnings) + ChatColor.GREEN + " in the lottery chance game!");
+                    player.sendMessage( colorize(prefix + "&aCongratulations! You won &6" + formatCurrency(winnings) + "&a in the lottery chance game!") );
+
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + ChatColor.GREEN + " has chanced " + ChatColor.GOLD + formatCurrency(stakeAmount) + ChatColor.GREEN + " and won " + ChatColor.GOLD + formatCurrency(winnings) + ChatColor.GREEN + "! Take the chance yourself with /lottery chance <amount>!");
+                    Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has chanced &6" + formatCurrency(stakeAmount) + "&a and won &6" + formatCurrency(winnings) + "&a! Take the chance yourself with /lottery chance <amount>!") );
                     Bukkit.broadcastMessage(footer);
                 } else {
-                    player.sendMessage(prefix + ChatColor.GREEN + "Sorry, you did not win this time. Better luck next time!");
                     balance.setBalance(player, balance.getBalance(player) - stakeAmount);
                     lotteryPot += stakeAmount;
+                    player.sendMessage( colorize(prefix + "&cSorry, you did not win this time. Better luck next time!") );
+
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + " has risked " + ChatColor.GOLD + formatCurrency(stakeAmount) + ChatColor.GREEN + " and lost it all! The lottery amount is now " + ChatColor.GOLD + formatCurrency(lotteryPot) + "!");
+                    Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has risked &6" + formatCurrency(stakeAmount) + "&6 and lost it all! The lottery amount is now &6" + formatCurrency(lotteryPot) + "&a!") );
                     Bukkit.broadcastMessage(footer);
                 }
+
                 return true;
             } else if (args[0].equalsIgnoreCase("announce")) {
 
                 Player player = (Player) sender;
-                if (!player.hasPermission("lotteryplus.lottery.announce")) {
-                    player.sendMessage(prefix + ChatColor.RED +"You do not have permission to execute this command.");
+                if (!player.hasPermission("lotteryplus.announce")) {
+                    player.sendMessage( colorize(prefix + "&aYou do not have permission to execute this command.") );
                     return true;
                 }
 
@@ -347,15 +420,15 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
                 Bukkit.broadcastMessage(header);
-                Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "The current lottery pot is "+ ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
-                Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Buy your tickets with "+ ChatColor.BOLD + ChatColor.GOLD +"/lottery buy <amount>");
+                Bukkit.broadcastMessage( colorize(prefix + "&aThe lottery will be drawn in " + getTimeUntilNextDraw()) );
+                Bukkit.broadcastMessage( colorize(prefix + "&aThe current pot is &6&l" + formatCurrency(lotteryPot) + "&r&a with " + lotteryTicketHolders.size() + " tickets!") );
                 Bukkit.broadcastMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("status")) {
 
                 Player player = (Player) sender;
-                if (!player.hasPermission("lotteryplus.lottery.status")) {
+                if (!player.hasPermission("lotteryplus.status")) {
                     player.sendMessage("You do not have permission to execute this command.");
                     return true;
                 }
@@ -365,47 +438,70 @@ public class LotteryPlus extends JavaPlugin {
                     String lastWinner = (String) data.get("last-winner");
                     double lastPrize = (double) data.get("last-prize");
 
-                    player.sendMessage(prefix + ChatColor.GREEN + "Last lottery winner: " + lastWinner);
-                    player.sendMessage(prefix + ChatColor.GREEN + "Amount won: " + formatCurrency(lastPrize));
+                    player.sendMessage( colorize(prefix + "&aLast lottery winner: " + lastWinner) );
+                    player.sendMessage( colorize(prefix + "&aAmount won: " + formatCurrency(lastPrize)) );
                 }
-                player.sendMessage(prefix + "&aNumber of tickets in current lottery: " + lotteryTicketHolders.size());
-                player.sendMessage(prefix + "&bCurrent prize pot: " + ChatColor.GOLD + formatCurrency(lotteryPot));
-                player.sendMessage(prefix + "&cThe next draw will be " + getTimeUntilNextDraw());
+                player.sendMessage( colorize(prefix + "&aNumber of tickets in current lottery: " + lotteryTicketHolders.size()) );
+                player.sendMessage( colorize(prefix + "&bCurrent prize pot: &6" + formatCurrency(lotteryPot)) );
+                player.sendMessage( colorize(prefix + "&cThe next draw will be in " + getTimeUntilNextDraw()) );
                 player.sendMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("boost")) {
 
-                Player player = (Player) sender;
-                if (!player.hasPermission("lotteryplus.lottery.boost")) {
-                    player.sendMessage("You do not have permission to execute this command.");
-                    return true;
-                }
+                if (sender instanceof Player) {
+                    Player player = (Player) sender;
+                    if (!player.hasPermission("lotteryplus.boost")) {
+                        player.sendMessage("You do not have permission to execute this command.");
+                        return true;
+                    }
 
-                double boostAmount;
-                try {
+                    double boostAmount;
+                    try {
+                        boostAmount = Double.parseDouble(args[1]);
+                    } catch (NumberFormatException e) {
+                        player.sendMessage( colorize(prefix + "&cInvalid boost amount.") );
+                        return true;
+                    }
+                    if (boostAmount <= 0) {
+                        player.sendMessage( colorize(prefix + "&cBoost amount must be greater than 0.") );
+                        return true;
+                    }
+                    lotteryPot += boostAmount;
+
+                    if (args.length == 2) {
+                        Bukkit.broadcastMessage(header);
+                        Bukkit.broadcastMessage( colorize(prefix + "&6" + player.getName() + "&a has boosted the lottery by &6&l" + formatCurrency(boostAmount) + "&r&a!") );
+                        Bukkit.broadcastMessage( colorize(prefix + "&aBuy your tickets with &6&l" + "/lottery buy <amount>") );
+                        Bukkit.broadcastMessage(footer);
+                    }
+                } else if (sender instanceof ConsoleCommandSender) {
+                    ConsoleCommandSender console = (ConsoleCommandSender) sender;
+                    double boostAmount;
                     boostAmount = Double.parseDouble(args[1]);
-                } catch (NumberFormatException e) {
-                    player.sendMessage(prefix + ChatColor.RED + "Invalid boost amount.");
-                    return true;
+                    if (boostAmount <= 0) {
+                        logger.info("Boost amount must be greater than 0.");
+                        return true;
+                    }
+                    lotteryPot += boostAmount;
+
+                    if (args.length == 2) {
+                        Bukkit.broadcastMessage(header);
+                        Bukkit.broadcastMessage( colorize(prefix + "&6" + "&a The lottery pot has been boosted boosted by &6&l" + formatCurrency(boostAmount) + "&r&a!") );
+                        Bukkit.broadcastMessage( colorize(prefix + "&aBuy your tickets with &6&l" + "/lottery buy <amount>") );
+                        Bukkit.broadcastMessage(footer);
+                    }
                 }
-                if (boostAmount <= 0) {
-                    player.sendMessage(prefix + ChatColor.RED + "Boost amount must be greater than 0.");
-                    return true;
-                }
-                lotteryPot += boostAmount;
-                Bukkit.broadcastMessage(header);
-                Bukkit.broadcastMessage(prefix + ChatColor.GOLD + player.getName() + ChatColor.GREEN + " has boosted the lottery by " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(boostAmount) + ChatColor.RESET + ChatColor.GREEN + "!");
-                Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Buy your tickets with "+ ChatColor.BOLD + ChatColor.GOLD +"/lottery buy <amount>");
-                Bukkit.broadcastMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("draw")) {
 
-                Player player = (Player) sender;
-                if (!player.hasPermission("lotteryplus.lottery.draw")) {
-                    player.sendMessage("You do not have permission to execute this command.");
-                    return true;
+                if (sender instanceof Player) {
+                    Player player = (Player) sender;
+                    if (!player.hasPermission("lotteryplus.draw")) {
+                        player.sendMessage("You do not have permission to execute this command.");
+                        return true;
+                    }
                 }
 
                 isDrawing = true;
@@ -415,14 +511,15 @@ public class LotteryPlus extends JavaPlugin {
                     lastWinnerName = winner.getName();
                     lastWinnerAmount = lotteryPot;
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "Congratulations! " + ChatColor.BOLD + ChatColor.GOLD + winner.getName() + ChatColor.RESET + ChatColor.GREEN + " has won the lottery and won " + ChatColor.BOLD + ChatColor.GOLD + formatCurrency(lotteryPot) + ChatColor.RESET + ChatColor.GREEN + "!");
-                    Bukkit.broadcastMessage(footer);
                     lotteryTicketHolders.clear();
                     lotteryPot = 0.0;
+
+                    Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &l&6" + formatCurrency(lotteryPot) + "&r&a!") );
+                    Bukkit.broadcastMessage(footer);
                 } else {
                     Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(prefix + ChatColor.GREEN + "No one has bought lottery tickets, so no one won the lottery this round.");
+                    Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
                     Bukkit.broadcastMessage(footer);
                 }
                 isDrawing = false;
@@ -441,7 +538,7 @@ public class LotteryPlus extends JavaPlugin {
                 return true;
 
             } else {
-                sender.sendMessage(prefix + ChatColor.RED + "Invalid command. Usage: /lottery <buy | donate | chance>");
+                sender.sendMessage( colorize(prefix + "&aInvalid command. Usage: /lottery <buy | donate | chance>") );
                 return true;
             }
         }

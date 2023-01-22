@@ -1,33 +1,84 @@
 name: LotteryPlus
-version: '${project.version}'
-main: asoxus.lotteryplus.LotteryPlus
+version: '${lottery-version}'
+main: LotteryPlus
 api-version: 1.19
 authors: [ Asoxus ]
 
+depend:
+  - Vault
+
 commands:
   lottery:
-    description: Allows players to buy lottery tickets, donate to the lottery pot, or play the lottery chance game.
+    description: Main command for LotteryPlus.
     usage: /lottery <buy | donate | chance | announce>
-    permission: myplugin.lottery
+    permission: lotteryplus
     aliases: [lot, lotto]
+    console: true
     children:
       buy:
-        description: Allows players to buy lottery tickets
+        description: Allows players to buy lottery tickets.
         usage: /lottery buy <number of tickets>
-        permission: myplugin.lottery.buy
+        permission: lotteryplus.buy
+        permission-message: 'You do not have permission to buy lottery tickets'
       donate:
-        description: Allows players to donate money to the lottery pot
+        description: Allows players to donate money to the lottery pot.
         usage: /lottery donate <amount>
-        permission: myplugin.lottery.donate
+        permission: lotteryplus.donate
+        permission-message: 'You do not have permission to donate to the lottery'
       chance:
-        description: Allows players to play the lottery chance game
+        description: Gives the player a chance of winning more money than they chance
         usage: /lottery chance <amount>
-        permission: myplugin.lottery.chance
+        permission: lotteryplus.chance
+        permission-message: 'You do not have permission to chance your money'
       announce:
         description: Announces the current state of the lottery.
         usage: /lottery announce
-        permission: myplugin.lottery.announce
+        permission: lotteryplus.announce
+        permission-message: 'You do not have permission to announce the lottery status'
       status:
         description: Gives the player information about the lottery.
         usage: /lottery status
-        permission: myplugin.lottery.status
+        permission: lotteryplus.status
+        permission-message: 'You do not have permission to get the lottery status'
+      boost:
+        description: Boosts the lottery pot.
+        usage: /lottery boost <amount> <silent>
+        permission: lotteryplus.boost
+        permission-message: 'You do not have permission to boost the lottery'
+        console: true
+      draw:
+        description: Draws the lottery early.
+        usage: /lottery draw
+        permission: lotteryplus.draw
+        permission-message: 'You do not have permission to draw the lottery'
+        console: true
+
+permissions:
+  lotteryplus.use:
+    description: Allows access to the /lottery command
+    children:
+      lotteryplus.buy: true
+      lotteryplus.donate: true
+      lotteryplus.chance: true
+      lotteryplus.status: true
+  lotteryplus.admin:
+    description: Allows access to the /lottery admin command
+    children:
+      lotteryplus.use: true
+      lotteryplus.announce: true
+      lotteryplus.boost: true
+      lotteryplus.draw: true
+  lotteryplus.buy:
+    description: Allows access to the /lottery buy command
+  lotteryplus.donate:
+    description: Allows access to the /lottery donate command
+  lotteryplus.chance:
+    description: Allows access to the /lottery chance command
+  lotteryplus.status:
+    description: Allows access to the /lottery status command
+  lotteryplus.announce:
+    description: Allows access to the /lottery announce command
+  lotteryplus.boost:
+    description: Allows access to the /lottery boost command
+  lotteryplus.draw:
+    description: Allows access to the /lottery draw command
