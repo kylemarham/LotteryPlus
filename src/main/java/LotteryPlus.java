@@ -39,7 +39,8 @@ public class LotteryPlus extends JavaPlugin {
     private String footer = "";
     private String prefix = "";
     private Logger logger;
-    private int Interval;
+    private int AnnounceInterval;
+    private int DrawInterval;
     private int lotteryDrawTaskId;
     private int lotteryAnnounceTaskId;
 
@@ -75,7 +76,8 @@ public class LotteryPlus extends JavaPlugin {
         footer = ChatColor.translateAlternateColorCodes('&', config.getString("footer"));
         prefix = ChatColor.translateAlternateColorCodes('&', config.getString("prefix"));
         lotteryPot = 0.0;
-        Interval = config.getInt("interval", 600);
+        AnnounceInterval = config.getInt("announce-interval", 600);
+        DrawInterval = config.getInt("draw-interval", 6000);
 
         logger = Logger.getLogger("Minecraft");
         logger.info("[LotteryPlus] has been enabled!");
@@ -106,15 +108,8 @@ public class LotteryPlus extends JavaPlugin {
                 getLogger().severe("Could not create data.yml file: " + e.getMessage());
             }
         }
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-        dataConfig.set("last-draw-time", new Date().getTime());
-        long nextDrawTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(60);
-        dataConfig.set("nextDrawTime", nextDrawTime);
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            getLogger().severe("Could not save data.yml file: " + e.getMessage());
-        }
+
+        setNextDrawTime();
     }
 
     public void onDisable() {
@@ -133,6 +128,44 @@ public class LotteryPlus extends JavaPlugin {
         getLogger().info("LotteryPlus has been disabled!");
     }
 
+    public void scheduleLotteryDraw() {
+        lotteryDrawTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
+            @Override
+            public void run() {
+                isDrawing = true;
+                if (lotteryTicketHolders.size() > 0) {
+                    Random random = new Random();
+                    Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
+                    lastWinnerName = winner.getName();
+                    lastWinnerAmount = lotteryPot;
+                    lastDrawTime = String.valueOf(new Date().getTime());
+                    saveWinnerData(winner, lotteryPot);
+
+                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+                    Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &6&l" + formatCurrency(lotteryPot) + "&a!") );
+                    Bukkit.broadcastMessage(footer);
+
+                    lotteryTicketHolders.clear();
+                    lotteryPot = 0.0;
+
+                } else {
+                    Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
+                    Bukkit.broadcastMessage(footer);
+                    lotteryPot = 0.0;
+                }
+
+                setNextDrawTime();
+
+                Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+                scheduleLotteryAnnounce();
+
+                isDrawing = false;
+            }
+        }, 20 * DrawInterval, 20 * DrawInterval);
+    }
+
     public void scheduleLotteryAnnounce() {
         lotteryAnnounceTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
             public void run() {
@@ -145,39 +178,7 @@ public class LotteryPlus extends JavaPlugin {
                     }
                 }
             }
-        }, 20 * Interval, 20 * Interval);
-    }
-
-    public void scheduleLotteryDraw() {
-        lotteryDrawTaskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
-            @Override
-            public void run() {
-                isDrawing = true;
-                if (lotteryTicketHolders.size() > 0) {
-                    Random random = new Random();
-                    Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
-                    lastWinnerName = winner.getName();
-                    lastWinnerAmount = lotteryPot;
-                    lastDrawTime = String.valueOf(new Date().getTime());
-
-                    saveWinnerData(winner, lotteryPot);
-
-                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &6&l" + formatCurrency(lotteryPot) + "&a!") );
-                    Bukkit.broadcastMessage(footer);
-
-                    lotteryTicketHolders.clear();
-                    lotteryPot = 0.0;
-                } else {
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
-                    Bukkit.broadcastMessage(footer);
-                    lotteryPot = 0.0;
-                }
-                isDrawing = false;
-            }
-        }, 20 * 60 * 60, 20 * 60 * 60);
+        }, 20 * AnnounceInterval, 20 * AnnounceInterval);
     }
 
     private void saveWinnerData(Player winner, double prize) {
@@ -204,13 +205,20 @@ public class LotteryPlus extends JavaPlugin {
 
     private String getTimeUntilNextDraw() {
         long currentTime = System.currentTimeMillis();
-        long nextDrawTime = dataConfig.getLong("nextDrawTime", 0);
+        long nextDrawTime = dataConfig.getLong("next-draw-time", 0);
         long timeUntilNextDraw = nextDrawTime - currentTime;
 
-        // convert timeUntilNextDraw to minutes
-        String minutesUntilNextDraw = TimeUnit.MILLISECONDS.toMinutes(timeUntilNextDraw) + " minutes";
+        String NextDrawTime = "";
 
-        return minutesUntilNextDraw;
+        if (timeUntilNextDraw / 1000 < 60) {
+            // convert timeUntilNextDraw to minutes
+            NextDrawTime = TimeUnit.MILLISECONDS.toSeconds(timeUntilNextDraw) + " seconds";
+        } else {
+            // convert timeUntilNextDraw to minutes
+            NextDrawTime = TimeUnit.MILLISECONDS.toMinutes(timeUntilNextDraw) + " minutes";
+        }
+
+        return NextDrawTime;
     }
 
     private boolean setupEconomy() {
@@ -248,6 +256,20 @@ public class LotteryPlus extends JavaPlugin {
 
     public String colorize(String str){
         return str.replace('&', '§');
+    }
+
+    public void setNextDrawTime() {
+        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+        Calendar now = Calendar.getInstance();
+        Calendar nextDraw = Calendar.getInstance();
+        nextDraw.add(Calendar.SECOND, DrawInterval);
+        dataConfig.set("next-draw-time", nextDraw.getTimeInMillis());
+        dataConfig.set("last-draw-time", now.getTimeInMillis());
+        try {
+            dataConfig.save(dataFile);
+        } catch (IOException e) {
+            getLogger().severe("Could not save data.yml file: " + e.getMessage());
+        }
     }
 
     @Override
@@ -539,16 +561,18 @@ public class LotteryPlus extends JavaPlugin {
                 }
 
                 isDrawing = true;
+
                 if (lotteryTicketHolders.size() > 0) {
                     Random random = new Random();
                     Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
                     lastWinnerName = winner.getName();
-                    lastWinnerAmount = lotteryPot;
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
 
                     Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + "&aCongratulations! &6&l" + winner.getName() + "&r&a has won the lottery and won &l&6" + formatCurrency(lotteryPot) + "&r&a!") );
                     Bukkit.broadcastMessage(footer);
+
+                    saveWinnerData(winner, lotteryPot);
                 } else {
                     Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + "&aNo one has bought lottery tickets, so no one won the lottery this round.") );
@@ -559,16 +583,18 @@ public class LotteryPlus extends JavaPlugin {
                 lotteryPot = 0.0;
                 isDrawing = false;
 
-                if (lotteryDrawTaskId != -1) {
-                    Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
-                    scheduleLotteryDraw();
-                    logger.info("[LotteryPlus] Lottery drawn early, restarting drawTask");
-                }
-                if (lotteryAnnounceTaskId != -1) {
-                    Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
-                    scheduleLotteryAnnounce();
-                    logger.info("[LotteryPlus] Lottery drawn early, restarting announceTask");
-                }
+                setNextDrawTime();
+
+                Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+                scheduleLotteryAnnounce();
+
+                Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
+                scheduleLotteryDraw();
+                logger.info("[LotteryPlus] Lottery drawn early, restarting drawTask");
+
+                Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+                scheduleLotteryAnnounce();
+                logger.info("[LotteryPlus] Lottery drawn early, restarting announceTask");
 
                 return true;
 

@@ -19,5 +19,8 @@ footer: ''
 # The prefix - can support & color codes
 prefix: '&6&l[LotteryPlus] &r'
 
+# The interval of the draw, in seconds
+draw-interval: 6000
+
 # The interval of the announcements, in seconds
-Interval: 600
+announce-interval: 600
