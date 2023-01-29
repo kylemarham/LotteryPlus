@@ -20,7 +20,22 @@ footer: ''
 prefix: '&6&l[LotteryPlus] &r'
 
 # The interval of the draw, in seconds
-draw-interval: 6000
+draw-interval: 3600
 
 # The interval of the announcements, in seconds
 announce-interval: 600
+
+# Donation cooldown time in seconds. Set to 0 to disable.
+donate-cooldown: 0
+
+# Minimum donation amount.
+min-donation-amount: 0
+
+# Maximum donation amount. Set to 0 to disable.
+max-donation-amount: 0
+
+# Minimum chance amount.
+minimum-chance: 0
+
+# Maximum chance amount. Set to 0 to disable.
+maximum-chance: 0

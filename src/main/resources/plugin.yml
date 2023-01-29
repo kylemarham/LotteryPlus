@@ -1,5 +1,5 @@
 name: LotteryPlus
-version: '${lottery-version}'
+version: '1.0.4'
 main: LotteryPlus
 api-version: 1.19
 authors: [ Asoxus ]
