@@ -10,6 +10,9 @@ chance-percent: 20
 # The multiplier of the win
 chance-win: 2
 
+# Toggle the header and footer broadcast on or off (true or false)
+show-header-footer: true
+
 # The header - can support & color codes
 header: ''
 
@@ -39,3 +42,9 @@ minimum-chance: 0
 
 # Maximum chance amount. Set to 0 to disable.
 maximum-chance: 0
+
+# Default lottery amount. When the lottery is drawn and when the plugin starts, this is how much will be in the pot.
+starting-amount: 5000
+
+# Minimum players. If there are not enough players participating, the lottery pot will roll over.
+minimum-players: 2

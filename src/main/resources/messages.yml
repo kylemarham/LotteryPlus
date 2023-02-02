@@ -7,7 +7,7 @@ lottery.help: "&aInvalid command. Usage: /lottery <buy | donate | chance>"
 noPermission: "You do not have permission to use this command."
 
 draw.lotteryWon: "&aCongratulations! &6&l%winner%&r&a has won the lottery and won &6&l%jackpot%&a!"
-draw.lotteryNotWon: "&aNo one has bought lottery tickets, so no one won the lottery this round."
+draw.lotteryNotWon: "&aNot enough tickets sold! The lottery pot is still &6%jackpot%."
 
 status.drawnIn: "&aThe lottery will be drawn in %time-until-draw%"
 status.currentPot: "&aThe current pot is &6&l%current-jackpot%&r&a with %ticket-count% tickets!"

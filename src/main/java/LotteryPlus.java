@@ -56,6 +56,10 @@ public class LotteryPlus extends JavaPlugin {
     private int maximumChance;
     private File messagesFile;
 
+    private double startingAmount;
+    private int minimumPlayers;
+    private boolean showHeaderFooter = true;
+
 
     public String formatCurrency(double amount) {
         NumberFormat formatter = NumberFormat.getNumberInstance();
@@ -83,7 +87,6 @@ public class LotteryPlus extends JavaPlugin {
         header = ChatColor.translateAlternateColorCodes('&', config.getString("header"));
         footer = ChatColor.translateAlternateColorCodes('&', config.getString("footer"));
         prefix = ChatColor.translateAlternateColorCodes('&', config.getString("prefix"));
-        lotteryPot = 0.0;
         AnnounceInterval = config.getInt("announce-interval", 600);
         DrawInterval = config.getInt("draw-interval", 6000);
         minDonation = config.getDouble("min-donation-amount");
@@ -91,6 +94,10 @@ public class LotteryPlus extends JavaPlugin {
         donateCooldown = config.getInt("donate-cooldown");
         minimumChance = config.getInt("minimum-chance");
         maximumChance = config.getInt("maximum-chance");
+        startingAmount = config.getDouble("starting-amount", 5000);
+        lotteryPot = startingAmount;
+        minimumPlayers = config.getInt("minimum-players", 2);
+        showHeaderFooter = config.getBoolean("show-header-footer", true);
 
         logger = Logger.getLogger("Minecraft");
         logger.info("[LotteryPlus] has been enabled!");
@@ -146,7 +153,16 @@ public class LotteryPlus extends JavaPlugin {
             @Override
             public void run() {
                 isDrawing = true;
-                if (lotteryTicketHolders.size() > 0) {
+                getLogger().info("Lottery holders size:" + lotteryTicketHolders.size());
+                getLogger().info("Minimum players:" + minimumPlayers);
+
+                Set<String> uniquePlayers = new HashSet<>();
+                for (Object o : lotteryTicketHolders) {
+                    uniquePlayers.add(o.toString());
+                }
+                int numberOfUniquePlayers = uniquePlayers.size();
+
+                if (numberOfUniquePlayers >= minimumPlayers) {
                     Random random = new Random();
                     Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
                     lastWinnerName = winner.getName();
@@ -155,22 +171,23 @@ public class LotteryPlus extends JavaPlugin {
                     saveWinnerData(winner, lotteryPot);
 
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
-                    Bukkit.broadcastMessage(header);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage(
                             colorize(prefix + messages.getString("draw.lotteryWon")
                                     .replace("%winner%", winner.getName())
                                     .replace("%jackpot%", formatCurrency(lotteryPot)))
                     );
-                    Bukkit.broadcastMessage(footer);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
 
                     lotteryTicketHolders.clear();
-                    lotteryPot = 0.0;
-
+                    lotteryPot = startingAmount;
                 } else {
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage( colorize(prefix + messages.getString("draw.lotteryNotWon")) );
-                    Bukkit.broadcastMessage(footer);
-                    lotteryPot = 0.0;
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage(
+                            colorize(prefix + messages.getString("draw.lotteryNotWon")
+                                    .replace("%jackpot%", formatCurrency(lotteryPot)))
+                    );
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 }
 
                 setNextDrawTime();
@@ -188,7 +205,7 @@ public class LotteryPlus extends JavaPlugin {
             public void run() {
                 if (!isDrawing) {
                     for(Player player : Bukkit.getOnlinePlayers()) {
-                        player.sendMessage(header);
+                        if (showHeaderFooter) player.sendMessage(header);
                         player.sendMessage(colorize(prefix + messages.getString("status.drawnIn")
                                 .replace("%time-until-draw%", getTimeUntilNextDraw()))
                         );
@@ -196,7 +213,7 @@ public class LotteryPlus extends JavaPlugin {
                                 .replace("%current-jackpot%", formatCurrency(lotteryPot))
                                 .replace("%ticket-count%", String.valueOf(lotteryTicketHolders.size())))
                         );
-                        player.sendMessage(footer);
+                        if (showHeaderFooter) player.sendMessage(footer);
                     }
                 }
             }
@@ -397,13 +414,13 @@ public class LotteryPlus extends JavaPlugin {
                         .replace("%price%", formatCurrency(totalPrice)))
                 );
 
-                Bukkit.broadcastMessage(header);
+                if (showHeaderFooter) Bukkit.broadcastMessage(header);
                 Bukkit.broadcastMessage( colorize(prefix + messages.getString("buy.broadcast")
                         .replace("%name%", player.getName())
                         .replace("%tickets%", String.valueOf(ticketCount))
                         .replace("%jackpot%", formatCurrency(lotteryPot)))
                 );
-                Bukkit.broadcastMessage(footer);
+                if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("donate")) {
@@ -447,13 +464,13 @@ public class LotteryPlus extends JavaPlugin {
                 balance.setBalance(player, balance.getBalance(player) - donationAmount);
                 lotteryPot += donationAmount;
                 player.sendMessage( colorize(prefix + messages.getString("donate.success").replace("%amount%", formatCurrency(donationAmount))) );
-                Bukkit.broadcastMessage(header);
+                if (showHeaderFooter) Bukkit.broadcastMessage(header);
                 Bukkit.broadcastMessage( colorize(prefix + messages.getString("donate.broadcast")
                         .replace("%name%", player.getName())
                         .replace("%amount%", formatCurrency(donationAmount))
                         .replace("%jackpot%", formatCurrency(lotteryPot)))
                 );
-                Bukkit.broadcastMessage(footer);
+                if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 return true;
             } else if (args[0].equalsIgnoreCase("chance")) {
                 if (!(sender instanceof Player)) {
@@ -506,25 +523,25 @@ public class LotteryPlus extends JavaPlugin {
                     balance.setBalance(player, balance.getBalance(player) + winnings);
                     player.sendMessage( colorize(prefix + messages.getString("chance.won").replace("%winnings%", formatCurrency(winnings))) );
 
-                    Bukkit.broadcastMessage(header);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + messages.getString("chance.win-broadcast")
                             .replace("%name%", player.getName())
                             .replace("%amount%", formatCurrency(stakeAmount))
                             .replace("%winnings%", formatCurrency(winnings)))
                     );
-                    Bukkit.broadcastMessage(footer);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 } else {
                     balance.setBalance(player, balance.getBalance(player) - stakeAmount);
                     lotteryPot += stakeAmount;
                     player.sendMessage( colorize(prefix + messages.getString("chance.no-win")) );
 
-                    Bukkit.broadcastMessage(header);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + messages.getString("chance.no-win-broadcast")
                             .replace("%name%", formatCurrency(stakeAmount))
                             .replace("%amount%", formatCurrency(stakeAmount))
                             .replace("%jackpot%", formatCurrency(lotteryPot)))
                     );
-                    Bukkit.broadcastMessage(footer);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 }
 
                 return true;
@@ -540,7 +557,7 @@ public class LotteryPlus extends JavaPlugin {
                     sender.sendMessage(messages.getString("noPermission"));
                     return true;
                 }
-                Bukkit.broadcastMessage(header);
+                if (showHeaderFooter) Bukkit.broadcastMessage(header);
                 Bukkit.broadcastMessage(colorize(prefix + messages.getString("status.drawnIn")
                         .replace("%time-until-draw%", getTimeUntilNextDraw()))
                 );
@@ -548,7 +565,7 @@ public class LotteryPlus extends JavaPlugin {
                         .replace("%current-jackpot%", formatCurrency(lotteryPot))
                         .replace("%ticket-count%", String.valueOf(lotteryTicketHolders.size())))
                 );
-                Bukkit.broadcastMessage(footer);
+                if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("status")) {
@@ -558,7 +575,7 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage(colorize(messages.getString("noPermission")));
                     return true;
                 }
-                player.sendMessage(header);
+                if (showHeaderFooter) player.sendMessage(header);
                 if( lastWinnerName != "" ){
                     Map<String,Object> data = getLastDrawData();
                     String lastWinner = (String) data.get("last-winner");
@@ -570,7 +587,7 @@ public class LotteryPlus extends JavaPlugin {
                 player.sendMessage( colorize(prefix + messages.getString("status.current-tickets").replace("%tickets%", String.valueOf(lotteryTicketHolders.size()))) );
                 player.sendMessage( colorize(prefix + messages.getString("status.current-pot").replace("%jackpot%", formatCurrency(lotteryPot))) );
                 player.sendMessage( colorize(prefix + messages.getString("status.next-draw").replace("%next-draw-time%", getTimeUntilNextDraw())) );
-                player.sendMessage(footer);
+                if (showHeaderFooter) player.sendMessage(footer);
                 return true;
 
             } else if (args[0].equalsIgnoreCase("boost")) {
@@ -596,13 +613,13 @@ public class LotteryPlus extends JavaPlugin {
                     lotteryPot += boostAmount;
 
                     if (args.length == 2) {
-                        Bukkit.broadcastMessage(header);
+                        if (showHeaderFooter) Bukkit.broadcastMessage(header);
                         Bukkit.broadcastMessage( colorize(prefix + messages.getString("boost.broadcast-player")
                                 .replace("%player%", player.getName())
                                 .replace("%amount%", formatCurrency(boostAmount)))
                         );
                         Bukkit.broadcastMessage( colorize(prefix + messages.getString("boost.broadcast-hint")) );
-                        Bukkit.broadcastMessage(footer);
+                        if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                     }
                 } else if (sender instanceof ConsoleCommandSender) {
                     ConsoleCommandSender console = (ConsoleCommandSender) sender;
@@ -615,11 +632,11 @@ public class LotteryPlus extends JavaPlugin {
                     lotteryPot += boostAmount;
 
                     if (args.length == 2) {
-                        Bukkit.broadcastMessage(header);
+                        if (showHeaderFooter) Bukkit.broadcastMessage(header);
                         Bukkit.broadcastMessage( colorize(prefix + messages.getString("boost.success-player")) );
                         Bukkit.broadcastMessage( colorize(prefix + messages.getString("boost.success-pot").replace("%jackpot%", formatCurrency(lotteryPot))) );
                         Bukkit.broadcastMessage( colorize(prefix + messages.getString("boost.broadcast-hint")) );
-                        Bukkit.broadcastMessage(footer);
+                        if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                     }
                 }
                 return true;
@@ -634,31 +651,39 @@ public class LotteryPlus extends JavaPlugin {
                     }
                 }
 
+                Set<String> uniquePlayers = new HashSet<>();
+                for (Object o : lotteryTicketHolders) {
+                    uniquePlayers.add(o.toString());
+                }
+                int numberOfUniquePlayers = uniquePlayers.size();
+
                 isDrawing = true;
 
-                if (lotteryTicketHolders.size() > 0) {
+                if (numberOfUniquePlayers >= minimumPlayers) {
                     Random random = new Random();
                     Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
                     lastWinnerName = winner.getName();
                     balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+                    saveWinnerData(winner, lotteryPot);
+                    lotteryPot = 0.0;
 
-                    Bukkit.broadcastMessage(header);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage(
                             colorize(prefix + messages.getString("draw.lotteryWon")
                                     .replace("%winner%", winner.getName())
                                     .replace("%jackpot%", formatCurrency(lotteryPot)))
                     );
-                    Bukkit.broadcastMessage(footer);
-
-                    saveWinnerData(winner, lotteryPot);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 } else {
-                    Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage( colorize(prefix + messages.getString("draw.lotteryNotWon")) );
-                    Bukkit.broadcastMessage(footer);
+                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
+                    Bukkit.broadcastMessage(
+                            colorize(prefix + messages.getString("draw.lotteryNotWon")
+                                    .replace("%jackpot%", formatCurrency(lotteryPot)))
+                    );
+                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 }
 
                 lotteryTicketHolders.clear();
-                lotteryPot = 0.0;
                 isDrawing = false;
 
                 setNextDrawTime();
