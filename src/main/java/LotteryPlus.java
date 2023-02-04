@@ -79,6 +79,8 @@ public class LotteryPlus extends JavaPlugin {
 
         saveDefaultConfig();
         FileConfiguration config = getConfig();
+        saveDefaultMessageConfig();
+        messages = getMessageConfig();
 
         ticketPrice = config.getDouble("ticket-price", 2.5);
         maxTicketCount = config.getInt("max-ticket-count", 100);
@@ -123,13 +125,24 @@ public class LotteryPlus extends JavaPlugin {
             }
         }
 
-        File messagesFile = new File(getDataFolder(), "messages.yml");
-        if (!messagesFile.exists()) {
+        setNextDrawTime();
+    }
+
+    private FileConfiguration getMessageConfig() {
+        File messageConfigFile = new File(getDataFolder(), "messages.yml");
+        return YamlConfiguration.loadConfiguration(messageConfigFile);
+    }
+
+    private void saveDefaultMessageConfig() {
+        File messageConfigFile = new File(getDataFolder(), "messages.yml");
+        if (!messageConfigFile.exists()) {
             saveResource("messages.yml", false);
         }
-        messages = YamlConfiguration.loadConfiguration(messagesFile);
+    }
 
-        setNextDrawTime();
+    private void reloadMessageConfig() {
+        File messageConfigFile = new File(getDataFolder(), "messages.yml");
+        messages = YamlConfiguration.loadConfiguration(messageConfigFile);
     }
 
     public void onDisable() {
@@ -701,6 +714,37 @@ public class LotteryPlus extends JavaPlugin {
 
                 return true;
 
+            } else if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+                if (!sender.hasPermission("lottery.reload")) {
+                    sender.sendMessage("You do not have permission to use this command");
+                    return true;
+                }
+
+                reloadConfig();
+                FileConfiguration config = getConfig();
+                reloadMessageConfig();
+                messages = getMessageConfig();
+
+                ticketPrice = config.getDouble("ticket-price", 2.5);
+                maxTicketCount = config.getInt("max-ticket-count", 100);
+                chanceWin = config.getDouble("chance-win", 2);
+                chancePercent = config.getInt("chance-percent", 20);
+                header = ChatColor.translateAlternateColorCodes('&', config.getString("header"));
+                footer = ChatColor.translateAlternateColorCodes('&', config.getString("footer"));
+                prefix = ChatColor.translateAlternateColorCodes('&', config.getString("prefix"));
+                AnnounceInterval = config.getInt("announce-interval", 600);
+                DrawInterval = config.getInt("draw-interval", 6000);
+                minDonation = config.getDouble("min-donation-amount");
+                maxDonation = config.getDouble("max-donation-amount");
+                donateCooldown = config.getInt("donate-cooldown");
+                minimumChance = config.getInt("minimum-chance");
+                maximumChance = config.getInt("maximum-chance");
+                startingAmount = config.getDouble("starting-amount", 5000);
+                minimumPlayers = config.getInt("minimum-players", 2);
+                showHeaderFooter = config.getBoolean("show-header-footer", true);
+
+                sender.sendMessage("The lottery plugin has been reloaded");
+                return true;
             } else {
                 sender.sendMessage( colorize(prefix + messages.getString("lottery.help")) );
                 return true;
