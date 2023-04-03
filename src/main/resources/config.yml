@@ -31,6 +31,9 @@ announce-interval: 600
 # Donation cooldown time in seconds. Set to 0 to disable.
 donate-cooldown: 0
 
+# Donation cooldown time in seconds. Set to 0 to disable.
+chance-cooldown: 0
+
 # Minimum donation amount.
 min-donation-amount: 0
 

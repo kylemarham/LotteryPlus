@@ -1,5 +1,5 @@
 name: LotteryPlus
-version: '1.0.5'
+version: '1.1.2'
 main: LotteryPlus
 api-version: 1.19
 authors: [ Asoxus ]
@@ -68,12 +68,21 @@ permissions:
       lotteryplus.announce: true
       lotteryplus.boost: true
       lotteryplus.draw: true
+      lotteryplus.chance.override: true
+      lotteryplus.donate.override: true
+      lotteryplus.buy.override: true
   lotteryplus.buy:
     description: Allows access to the /lottery buy command
+  lotteryplus.buy.override:
+    description: Allows unlimited access to the /lottery buy command
   lotteryplus.donate:
     description: Allows access to the /lottery donate command
+  lotteryplus.donate.override:
+    description: Allows unlimited access to the /lottery donate command
   lotteryplus.chance:
     description: Allows access to the /lottery chance command
+  lotteryplus.chance.override:
+    description: Allows unlimited access to the /lottery chance command
   lotteryplus.status:
     description: Allows access to the /lottery status command
   lotteryplus.announce:

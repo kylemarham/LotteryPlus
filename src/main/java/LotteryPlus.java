@@ -51,7 +51,9 @@ public class LotteryPlus extends JavaPlugin {
     private FileConfiguration dataConfig;
     public static FileConfiguration messages;
     private Map<UUID, Long> lastDonationTime = new HashMap<>();
+    private Map<UUID, Long> lastChanceTime = new HashMap<>();
     private int donateCooldown;
+    private int chanceCooldown;
     private int minimumChance;
     private int maximumChance;
     private File messagesFile;
@@ -94,12 +96,14 @@ public class LotteryPlus extends JavaPlugin {
         minDonation = config.getDouble("min-donation-amount");
         maxDonation = config.getDouble("max-donation-amount");
         donateCooldown = config.getInt("donate-cooldown");
+        chanceCooldown = config.getInt("chance-cooldown");
         minimumChance = config.getInt("minimum-chance");
         maximumChance = config.getInt("maximum-chance");
         startingAmount = config.getDouble("starting-amount", 5000);
-        lotteryPot = startingAmount;
         minimumPlayers = config.getInt("minimum-players", 2);
         showHeaderFooter = config.getBoolean("show-header-footer", true);
+
+        setOrGetStartingAmount();
 
         logger = Logger.getLogger("Minecraft");
         logger.info("[LotteryPlus] has been enabled!");
@@ -126,6 +130,31 @@ public class LotteryPlus extends JavaPlugin {
         }
 
         setNextDrawTime();
+    }
+
+    private void setOrGetStartingAmount() {
+        // Load the data.yml file
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdir();
+        }
+        File dataFile = new File(getDataFolder(), "data.yml");
+        YamlConfiguration dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+
+        // Check if the lotteryPot value exists in the data.yml file
+        if (dataConfig.contains("jackpot")) {
+            // If it does, set the lotteryPot variable to the value in the data.yml file
+            lotteryPot = dataConfig.getDouble("jackpot");
+        } else {
+            // If it doesn't, set the lotteryPot variable to a default value
+            lotteryPot = startingAmount;
+            // Save the default value to the data.yml file
+            dataConfig.set("jackpot", lotteryPot);
+            try {
+                dataConfig.save(dataFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     private FileConfiguration getMessageConfig() {
@@ -175,7 +204,7 @@ public class LotteryPlus extends JavaPlugin {
                 }
                 int numberOfUniquePlayers = uniquePlayers.size();
 
-                if (numberOfUniquePlayers >= minimumPlayers) {
+                if (numberOfUniquePlayers >= minimumPlayers && numberOfUniquePlayers > 0) {
                     Random random = new Random();
                     Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
                     lastWinnerName = winner.getName();
@@ -183,7 +212,8 @@ public class LotteryPlus extends JavaPlugin {
                     lastDrawTime = String.valueOf(new Date().getTime());
                     saveWinnerData(winner, lotteryPot);
 
-                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+//                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+                    economy.depositPlayer(winner, lotteryPot);
                     if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage(
                             colorize(prefix + messages.getString("draw.lotteryWon")
@@ -192,8 +222,8 @@ public class LotteryPlus extends JavaPlugin {
                     );
                     if (showHeaderFooter) Bukkit.broadcastMessage(footer);
 
-                    lotteryTicketHolders.clear();
-                    lotteryPot = startingAmount;
+                    setLotteryPot(startingAmount);
+
                 } else {
                     if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage(
@@ -203,8 +233,8 @@ public class LotteryPlus extends JavaPlugin {
                     if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 }
 
+                lotteryTicketHolders.clear();
                 setNextDrawTime();
-
                 Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
                 scheduleLotteryAnnounce();
 
@@ -238,6 +268,30 @@ public class LotteryPlus extends JavaPlugin {
         data.set("last-winner", winner.getName());
         data.set("last-prize", prize);
         data.set("last-draw-time", new Date().getTime());
+
+        try {
+            data.save(new File(getDataFolder(), "data.yml"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void increaseLotteryPot(double jackpot) {
+        FileConfiguration data = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "data.yml"));
+        data.set("jackpot", lotteryPot + jackpot);
+        lotteryPot = lotteryPot + jackpot;
+
+        try {
+            data.save(new File(getDataFolder(), "data.yml"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void setLotteryPot(double jackpot) {
+        FileConfiguration data = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "data.yml"));
+        data.set("jackpot", jackpot);
+        lotteryPot = jackpot;
 
         try {
             data.save(new File(getDataFolder(), "data.yml"));
@@ -377,6 +431,11 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
 
+                boolean override = false;
+                if (sender.hasPermission("lotteryplus.buy.override")) {
+                    override = true;
+                }
+
                 int ticketCount;
                 try {
                     ticketCount = Integer.parseInt(args[1]);
@@ -384,7 +443,7 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage( colorize(prefix + messages.getString("buy.invalid-tickets")) );
                     return true;
                 }
-                if (ticketCount < 1 || ticketCount > maxTicketCount) {
+                if (ticketCount < 1 || ticketCount > maxTicketCount && !override) {
                     player.sendMessage( colorize(prefix + messages.getString("buy.invalid-tickets1")
                             .replace("%max-tickets%", String.valueOf(maxTicketCount))) );
                     return true;
@@ -393,14 +452,14 @@ public class LotteryPlus extends JavaPlugin {
                 int currentTicketCount = getPlayerTicketCount(player);
 
                 // If the user already has maximum tickets, prevent them from buying more
-                if( currentTicketCount == maxTicketCount ){
+                if( currentTicketCount == maxTicketCount && !override ){
                     player.sendMessage( colorize(prefix + messages.getString("buy.already-maxed")
                             .replace("%max-tickets%", String.valueOf(maxTicketCount))) );
                     return true;
                 }
 
                 // If the user tries to buy more than 100 tickets, limit them to 100-how many they are trying to buy
-                if (currentTicketCount + ticketCount > maxTicketCount) {
+                if (currentTicketCount + ticketCount > maxTicketCount && !override) {
                     ticketCount = maxTicketCount - currentTicketCount;
                     player.sendMessage( colorize(prefix + messages.getString("buy.x-more")
                             .replace("%tickets%", String.valueOf(ticketCount))) );
@@ -416,7 +475,8 @@ public class LotteryPlus extends JavaPlugin {
                 }
 
                 balance.setBalance(player, balance.getBalance(player) - totalPrice);
-                lotteryPot += totalPrice;
+
+                increaseLotteryPot(totalPrice);
 
                 for (int i = 0; i < ticketCount; i++) {
                     lotteryTicketHolders.add(player);
@@ -453,8 +513,14 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage(prefix + messages.getString("donate.cooldown"));
                     return true;
                 }
+                lastDonationTime.put(playerUUID, currentTime);
 
                 double donationAmount;
+
+                boolean override = false;
+                if (sender.hasPermission("lotteryplus.donate.override")) {
+                    override = true;
+                }
 
                 try {
                     donationAmount = Double.parseDouble(args[1]);
@@ -466,7 +532,7 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage( colorize(prefix + messages.getString("donate.too-low").replace("%minimum%", formatCurrency(minDonation))) );
                     return true;
                 }
-                if (donationAmount > maxDonation && maxDonation > 0) {
+                if (donationAmount > maxDonation && maxDonation > 0 && !override) {
                     player.sendMessage( colorize(prefix + messages.getString("donate.too-high").replace("%maximum%", formatCurrency(maxDonation))) );
                     return true;
                 }
@@ -475,7 +541,9 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
                 balance.setBalance(player, balance.getBalance(player) - donationAmount);
-                lotteryPot += donationAmount;
+
+                increaseLotteryPot(donationAmount);
+
                 player.sendMessage( colorize(prefix + messages.getString("donate.success").replace("%amount%", formatCurrency(donationAmount))) );
                 if (showHeaderFooter) Bukkit.broadcastMessage(header);
                 Bukkit.broadcastMessage( colorize(prefix + messages.getString("donate.broadcast")
@@ -497,6 +565,11 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
 
+                boolean override = false;
+                if (sender.hasPermission("lotteryplus.chance.override")) {
+                    override = true;
+                }
+
                 double stakeAmount;
                 try {
                     stakeAmount = Double.parseDouble(args[1]);
@@ -505,12 +578,12 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
 
-                if (stakeAmount <= minimumChance) {
+                if (stakeAmount < minimumChance) {
                     player.sendMessage( colorize(prefix + messages.getString("chance.too-low").replace("%amount%", formatCurrency(minimumChance))) );
                     return true;
                 }
 
-                if (stakeAmount > maximumChance && maximumChance > 0) {
+                if (stakeAmount > maximumChance && maximumChance > 0 && !override) {
                     player.sendMessage( colorize(prefix + messages.getString("chance.too-high").replace("%amount%", formatCurrency(maximumChance))) );
                     return true;
                 }
@@ -520,7 +593,7 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
 
-                if (chanceCommandCooldown.containsKey(player) && System.currentTimeMillis() - chanceCommandCooldown.get(player) < 60000) {
+                if (chanceCommandCooldown.containsKey(player) && System.currentTimeMillis() - chanceCommandCooldown.get(player) < chanceCooldown * 1000) {
                     player.sendMessage( colorize(prefix + messages.getString("chance.no-spam")) );
                     return true;
                 } else {
@@ -533,7 +606,8 @@ public class LotteryPlus extends JavaPlugin {
 
                 if (chance <= chancePercent) {
                     double winnings = stakeAmount * chanceWin;
-                    balance.setBalance(player, balance.getBalance(player) + winnings);
+//                    balance.setBalance(player, balance.getBalance(player) + winnings);
+                    economy.depositPlayer(player, lotteryPot);
                     player.sendMessage( colorize(prefix + messages.getString("chance.won").replace("%winnings%", formatCurrency(winnings))) );
 
                     if (showHeaderFooter) Bukkit.broadcastMessage(header);
@@ -544,13 +618,13 @@ public class LotteryPlus extends JavaPlugin {
                     );
                     if (showHeaderFooter) Bukkit.broadcastMessage(footer);
                 } else {
-                    balance.setBalance(player, balance.getBalance(player) - stakeAmount);
-                    lotteryPot += stakeAmount;
+                    increaseLotteryPot(stakeAmount);
+
                     player.sendMessage( colorize(prefix + messages.getString("chance.no-win")) );
 
                     if (showHeaderFooter) Bukkit.broadcastMessage(header);
                     Bukkit.broadcastMessage( colorize(prefix + messages.getString("chance.no-win-broadcast")
-                            .replace("%name%", formatCurrency(stakeAmount))
+                            .replace("%name%", player.getName())
                             .replace("%amount%", formatCurrency(stakeAmount))
                             .replace("%jackpot%", formatCurrency(lotteryPot)))
                     );
@@ -562,7 +636,7 @@ public class LotteryPlus extends JavaPlugin {
 
                 Player player = (Player) sender;
                 if (!player.hasPermission("lotteryplus.announce")) {
-                    player.sendMessage( colorize(prefix + messages.getString("noPermission") ) );
+                    player.sendMessage( colorize( messages.getString("noPermission") ) );
                     return true;
                 }
 
@@ -589,7 +663,11 @@ public class LotteryPlus extends JavaPlugin {
                     return true;
                 }
                 if (showHeaderFooter) player.sendMessage(header);
-                if( lastWinnerName != "" ){
+
+                File dataFile = new File(getDataFolder(), "data.yml");
+                YamlConfiguration dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+                String lastWinnerName = dataConfig.getString("last-winner");
+                if (lastWinnerName != null) {
                     Map<String,Object> data = getLastDrawData();
                     String lastWinner = (String) data.get("last-winner");
                     double lastPrize = (double) data.get("last-prize");
@@ -597,6 +675,7 @@ public class LotteryPlus extends JavaPlugin {
                     player.sendMessage( colorize(prefix + messages.getString("status.last-winner").replace("%player%", lastWinner)) );
                     player.sendMessage( colorize(prefix + messages.getString("status.last-prize").replace("%jackpot%", formatCurrency(lastPrize))) );
                 }
+
                 player.sendMessage( colorize(prefix + messages.getString("status.current-tickets").replace("%tickets%", String.valueOf(lotteryTicketHolders.size()))) );
                 player.sendMessage( colorize(prefix + messages.getString("status.current-pot").replace("%jackpot%", formatCurrency(lotteryPot))) );
                 player.sendMessage( colorize(prefix + messages.getString("status.next-draw").replace("%next-draw-time%", getTimeUntilNextDraw())) );
@@ -623,7 +702,8 @@ public class LotteryPlus extends JavaPlugin {
                         player.sendMessage( colorize(prefix + messages.getString("boost.too-low")) );
                         return true;
                     }
-                    lotteryPot += boostAmount;
+
+                    increaseLotteryPot(boostAmount);
 
                     if (args.length == 2) {
                         if (showHeaderFooter) Bukkit.broadcastMessage(header);
@@ -642,7 +722,8 @@ public class LotteryPlus extends JavaPlugin {
                         logger.info( messages.getString("boost.too-low") );
                         return true;
                     }
-                    lotteryPot += boostAmount;
+
+                    increaseLotteryPot(boostAmount);
 
                     if (args.length == 2) {
                         if (showHeaderFooter) Bukkit.broadcastMessage(header);
@@ -669,40 +750,36 @@ public class LotteryPlus extends JavaPlugin {
                     uniquePlayers.add(o.toString());
                 }
                 int numberOfUniquePlayers = uniquePlayers.size();
+                if (numberOfUniquePlayers == 0){
+                    sender.sendMessage( "There are no players in the lottery!" );
+                    return true;
+                }
 
                 isDrawing = true;
 
-                if (numberOfUniquePlayers >= minimumPlayers) {
-                    Random random = new Random();
-                    Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
-                    lastWinnerName = winner.getName();
-                    balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
-                    saveWinnerData(winner, lotteryPot);
-                    lotteryPot = 0.0;
+                Random random = new Random();
+                Player winner = lotteryTicketHolders.get(random.nextInt(lotteryTicketHolders.size()));
+                lastWinnerName = winner.getName();
 
-                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(
-                            colorize(prefix + messages.getString("draw.lotteryWon")
-                                    .replace("%winner%", winner.getName())
-                                    .replace("%jackpot%", formatCurrency(lotteryPot)))
-                    );
-                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
-                } else {
-                    if (showHeaderFooter) Bukkit.broadcastMessage(header);
-                    Bukkit.broadcastMessage(
-                            colorize(prefix + messages.getString("draw.lotteryNotWon")
-                                    .replace("%jackpot%", formatCurrency(lotteryPot)))
-                    );
-                    if (showHeaderFooter) Bukkit.broadcastMessage(footer);
-                }
+//                balance.setBalance(winner, balance.getBalance(winner) + lotteryPot);
+                economy.depositPlayer(winner, lotteryPot);
+                saveWinnerData(winner, lotteryPot);
 
+                if (showHeaderFooter) Bukkit.broadcastMessage(header);
+                Bukkit.broadcastMessage(
+                        colorize(prefix + messages.getString("draw.lotteryWon")
+                                .replace("%winner%", winner.getName())
+                                .replace("%jackpot%", formatCurrency(lotteryPot)))
+                );
+
+                if (showHeaderFooter) Bukkit.broadcastMessage(footer);
+
+                setLotteryPot(startingAmount);
                 lotteryTicketHolders.clear();
+
                 isDrawing = false;
 
                 setNextDrawTime();
-
-                Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
-                scheduleLotteryAnnounce();
 
                 Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
                 scheduleLotteryDraw();
@@ -742,6 +819,14 @@ public class LotteryPlus extends JavaPlugin {
                 startingAmount = config.getDouble("starting-amount", 5000);
                 minimumPlayers = config.getInt("minimum-players", 2);
                 showHeaderFooter = config.getBoolean("show-header-footer", true);
+
+                Bukkit.getScheduler().cancelTask(lotteryDrawTaskId);
+                scheduleLotteryDraw();
+                logger.info("[LotteryPlus] Reloaded, restarting drawTask");
+
+                Bukkit.getScheduler().cancelTask(lotteryAnnounceTaskId);
+                scheduleLotteryAnnounce();
+                logger.info("[LotteryPlus] Reloaded, restarting announceTask");
 
                 sender.sendMessage("The lottery plugin has been reloaded");
                 return true;

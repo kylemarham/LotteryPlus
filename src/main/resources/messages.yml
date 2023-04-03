@@ -4,7 +4,7 @@ minutes: "minutes"
 
 lottery.help: "&aInvalid command. Usage: /lottery <buy | donate | chance>"
 
-noPermission: "You do not have permission to use this command."
+noPermission: "&cYou do not have permission to use this command."
 
 draw.lotteryWon: "&aCongratulations! &6&l%winner%&r&a has won the lottery and won &6&l%jackpot%&a!"
 draw.lotteryNotWon: "&aNot enough tickets sold! The lottery pot is still &6%jackpot%."
@@ -37,6 +37,7 @@ donate.success: "&aYou have successfully donated &6%amount%&a to the lottery pot
 donate.broadcast: "&6%name%&a has donated &6%amount%&a to the lottery pot. There is now &6%jackpot%&a in the pot!"
 
 chance.invalid: "&cInvalid stake amount."
+chance.cooldown: "&cYou are on cooldown. Please wait before using chance again."
 chance.too-low: "&cStake amount must be greater than %amount%."
 chance.too-high: "&cStake amount must be less than %amount%."
 chance.too-poor: "&cYou don't have enough money to stake %amount%."

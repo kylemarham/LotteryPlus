@@ -6,7 +6,7 @@
 
     <groupId>Asoxus</groupId>
     <artifactId>LotteryPlus</artifactId>
-    <version>1.0.5-SNAPSHOT</version>
+    <version>1.1.2</version>
     <packaging>jar</packaging>
 
     <name>LotteryPlus</name>
